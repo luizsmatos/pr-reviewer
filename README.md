@@ -94,7 +94,7 @@ confere se o skill e o prompt existem.
   o item fica `drafted` com o motivo no `status`, esperando o `publish` manual.
 - **A publicação recusa** quando: o rascunho é inválido; o PR recebeu push depois
   do review (`--force` publica ancorado no commit revisado); o verdict é
-  `approve` com achado `critical`/`major` (`--force`); o PR é seu.
+  `approve` com qualquer achado (`--force`); o PR é seu.
 - Achado fora do diff não vira comentário inline: vai para o corpo, em
   `## Fora do diff`, para o GitHub não rejeitar o review inteiro.
 - Rascunho inválido ganha uma re-execução; falhou de novo, a saída bruta fica
@@ -107,6 +107,10 @@ confere se o skill e o prompt existem.
   `findings.json`.
 - O prompt é `prompts/review.md`; quem revisa é o skill. Severidades do
   `the-judge` viram `critical` (blocker), `major` (should-fix) e `nit`.
+- Veredito: `critical`/`major` → REQUEST_CHANGES; só `nit` ou pré-existente
+  que vale corrigir no PR → COMMENT; APPROVE só sem nada a corrigir e sem
+  pedido de outro revisor em aberto. Achado que repete o pedido de um humano
+  não é postado de novo.
 - Daemon morto no meio de uma publicação: o item fica `publishing` e não é
   republicado sozinho, porque o review pode já ter saído. Confira o PR e rode
   `publish` se não saiu, ou `skip` se saiu.
@@ -117,4 +121,6 @@ confere se o skill e o prompt existem.
 
 `skills/the-judge` é o skill The Judge, de Felipe Rodrigues
 ([github.com/felipfr](https://github.com/felipfr)), licença
-[CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/).
+[CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/). Esta cópia foi modificada
+(versão 1.6.0): veredito sem "approve com nits", pré-existente só quando cabe no
+PR, e pedidos abertos de revisores humanos impedem o APPROVE.

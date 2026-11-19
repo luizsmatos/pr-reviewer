@@ -49,8 +49,8 @@ function comment(finding) {
 }
 
 export function buildReview({ meta, summary, findings }, lines, { force = false } = {}) {
-  if (meta.verdict === "approve" && !force && findings.some((f) => f.severity === "critical" || f.severity === "major")) {
-    throw new Error("verdict approve com achado critical/major — ajuste o rascunho ou use --force");
+  if (meta.verdict === "approve" && !force && findings.length > 0) {
+    throw new Error("verdict approve com achados — approve não leva comentário; ajuste o rascunho ou use --force");
   }
   const inDiff = (f) => lines.get(f.path)?.has(f.line);
   const outside = findings.filter((f) => !inDiff(f));

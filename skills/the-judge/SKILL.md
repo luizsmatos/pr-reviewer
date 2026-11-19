@@ -4,7 +4,7 @@ description: Evidence-first pull request judge that reviews a PR and posts one c
 license: CC-BY-4.0
 metadata:
   author: Felipe Rodrigues - github.com/felipfr
-  version: 1.5.0
+  version: 1.6.0
 ---
 
 # The Judge
@@ -54,11 +54,13 @@ Do not fix anything as part of the review. Fixing is the next step, decided by t
 | Severity | Emoji | Definition | Verdict effect |
 |---|---|---|---|
 | blocker | 🔴 | Changes whether the PR should merge: data loss, exploitable security, incorrect money, broken auth, irreversible migration, PII in logs | REQUEST_CHANGES |
-| should-fix | 🟠 | Real defect, but not a merge risk | COMMENT |
-| nit | 🟡 | Minor. Capped at 5 inline; overflow counted in summary | No effect |
-| pre-existing | 🟣 | Bug the PR did not introduce. Summary only, never inline | No effect |
+| should-fix | 🟠 | Real defect, but not a merge risk | REQUEST_CHANGES |
+| nit | 🟡 | Minor, worth fixing in this PR. Capped at 5 inline; overflow counted in summary | COMMENT |
+| pre-existing | 🟣 | Bug the PR did not introduce, in code the PR changes or calls, fixable within this PR. Summary only, never inline | COMMENT |
 
-Verdict mapping: any 🔴 present, REQUEST_CHANGES. Zero 🔴 and zero 🟠, APPROVE. Anything else, COMMENT.
+Verdict mapping: any 🔴 or 🟠, REQUEST_CHANGES. Otherwise any 🟡 or 🟣, COMMENT. APPROVE only when nothing is left to fix: zero findings, zero carryover, and no open ask from a human reviewer (`open_human_asks` is 0). APPROVE carries no inline comments.
+
+A pre-existing bug outside the code the PR changes or calls, or too large to fix in this PR, is not reported at all: it is not this PR's job. A finding is only raised when it is worth the author's time to fix now; if not, kill it instead of downgrading it to a nit.
 
 **Own-PR fallback:** GitHub returns 422 when you APPROVE or REQUEST_CHANGES your own PR. `scripts/post_review.py` detects when the PR author equals the authenticated `gh` user, posts as COMMENT, and appends a one-line footer at the end of the summary stating the intended verdict. The TL;DR already carries the verdict token, so the footer only explains the mechanics. Do not fight this; it is API behavior.
 
@@ -125,7 +127,7 @@ Enumerate every external surface the diff touches: dependencies added or version
 - **Pass B. Security**: high-confidence exploitability only, newly introduced by this PR, with the hard exclusion and precedent lists applied.
 - **Pass C. Structure and maintainability**: the ambitious structural pass. Code judo, file-size limits, spaghetti growth, boundaries, canonical layer.
 - **Pass D. AI slop and useless code comments**: comments that restate code, changelog comments, docstring bloat, commented-out code, defensive try/catch on trusted paths, speculative abstractions.
-- **Pass E. PR description claims and open human asks**: every claim of "fixes X" or "improves Y" needs evidence (test, repro, measurement) or becomes a question. When the PR has human reviews, also build the **ask ledger**: read every human review body and every inline comment in full (never truncated), split each into atomic asks (numbered sub-items and "tests to add" lists count one by one), and mark each one done, partly done, or not done against the current code with `file:line` (or the test name) as evidence. A thread the author answered as fixed while an ask in it is not done is a finding (🟠 when the ask was a fix or a test the reviewer required, 🟡 otherwise). Put the ledger under Checks run. (gc#646: two rounds answered "resolved" while the requested `loadStatusIds` tests were still missing; the ask sat in item 3 of an inline comment.)
+- **Pass E. PR description claims and open human asks**: every claim of "fixes X" or "improves Y" needs evidence (test, repro, measurement) or becomes a question. When the PR has human reviews, also build the **ask ledger**: read every human review body and every inline comment in full (never truncated), split each into atomic asks (numbered sub-items and "tests to add" lists count one by one), and mark each one done, partly done, or not done against the current code with `file:line` (or the test name) as evidence. A thread the author answered as fixed while an ask in it is not done is a finding (🟠 when the ask was a fix or a test the reviewer required, 🟡 otherwise). Put the ledger under Checks run, and set `open_human_asks` in `findings.json` to the number of asks still not done or partly done (0 without human reviews). Never repeat an open human ask as your own finding: reference it in the ledger ("reinforces item N from <reviewer>") and keep it out of `findings`. (gc#646: two rounds answered "resolved" while the requested `loadStatusIds` tests were still missing; the ask sat in item 3 of an inline comment.)
 - **Pass F. Bypasses, duplication, and gambiarras**: suppression directives, dodged tests, type and TLS bypasses, copy-paste duplication, magic values, sleep-as-synchronization, unlabeled workarounds. Seeded by the Step 1 bypass and duplicate scans; every scan hit gets judged here.
 - **Pass G. Repo rules**: find every agent instruction file that governs a changed path (`AGENTS.md`, `CLAUDE.md`, `.cursor/rules`, `CONTRIBUTING.md`, module READMEs the instruction file names as the source of truth), walking from each changed file up to the repo root. Turn each rule into a yes/no check and run the diff through it, one rule at a time; list the files and the rule count under Checks run. A violation is a finding citing the rule's `file:line` as evidence next to the code's. Skip rules the repo's lint already enforces (rule 4). (gc#615: DB error codes in the service and a hand-rolled date conversion both broke written `apps/server/AGENTS.md` rules.)
 
@@ -148,7 +150,8 @@ Two grounding rules:
 {
   "language": "en",
   "round": 1,
-  "carryover": {"blocker": 0, "should-fix": 0},
+  "carryover": {"blocker": 0, "should-fix": 0, "nit": 0, "pre-existing": 0},
+  "open_human_asks": 0,
   "verdict": "REQUEST_CHANGES",
   "summary": "## TL;DR\n...\n## Findings\n...\n## Promote to lint rule\n...\n## Research log\n...\n## Checks run\n...\n## Skipped files\n...",
   "findings": [
@@ -167,7 +170,7 @@ Two grounding rules:
 }
 ```
 
-`round` defaults to 1. `carryover` counts previous-round findings still unresolved (zeros in round 1); the gate uses it to compute the correct verdict when the new-findings list alone would understate open risk. `id` values are stable across rounds (F1 stays F1 forever) so the resolution ledger maps cleanly. Evidence entries accept three types: `internal` (verified `path:line`), `external` (https URL from an official source fetched this review), and `repro` (the local command that demonstrates the claim, with its observed result in the finding body).
+`round` defaults to 1. `open_human_asks` is required: the count of not-done or partly-done asks from the Pass E ledger. `carryover` counts previous-round findings still unresolved, per severity (zeros in round 1); the gate uses it to compute the correct verdict when the new-findings list alone would understate open risk. `id` values are stable across rounds (F1 stays F1 forever) so the resolution ledger maps cleanly. Evidence entries accept three types: `internal` (verified `path:line`), `external` (https URL from an official source fetched this review), and `repro` (the local command that demonstrates the claim, with its observed result in the finding body).
 
 Rules the gate enforces (write to them from the start): body starts with the severity emoji; blocker and should-fix require at least one evidence entry; external evidence must be an https URL; pre-existing findings have no `line`; the summary contains a TL;DR section and a lint-rule section.
 
@@ -233,7 +236,7 @@ The Judge is decisive: it converges reviews instead of stretching them. Round 1 
 
 **Round cap.** By round 3, every remaining open finding is either fixed, converted to a follow-up issue by agreement, or escalated out of the thread. The Judge never runs a fourth round on the same finding set.
 
-**Approval bar.** Approve as soon as the PR definitely improves overall code health, even if imperfect; perfect code does not exist, only better code. Unresolved 🟡 never blocks an APPROVE (approve with nits). Withholding approval to extract polish beyond the severity table is scope creep by the reviewer.
+**Approval bar.** Approve only when nothing worth fixing is left: no open finding of any severity, no open carryover, and no open ask from a human reviewer. There is no "approve with nits": a nit worth raising is worth a COMMENT, and one not worth a COMMENT is not raised. The guard against scope creep is the bar for raising a finding, not the verdict: polish the author would not reasonably fix in this PR is killed in Step 4.
 
 The gate enforces the mechanical half of this contract: with `"round": 2` or higher it rejects any non-blocker finding, requires the Resolution section, and requires `carryover` so the verdict reflects still-open previous findings.
 
@@ -242,7 +245,7 @@ The gate enforces the mechanical half of this contract: with `"round": 2` or hig
 ### Example 1: routine review
 
 User says: "revise esse PR" (on a branch with an open PR, 180 changed lines, TypeScript).
-Actions: Steps 0-2 (research: one dep bump, checked its changelog), sequential passes, 1 should-fix + 2 nits survive verification, gate passes on second run (first run caught an exclamation mark), post as COMMENT.
+Actions: Steps 0-2 (research: one dep bump, checked its changelog), sequential passes, 1 should-fix + 2 nits survive verification, gate passes on second run (first run caught an exclamation mark), post as REQUEST_CHANGES.
 Result: one consolidated review, three inline comments, summary with research log citing the changelog URL.
 
 ### Example 2: blocker found
@@ -260,7 +263,7 @@ Result: comment asks for evidence instead of speculating.
 ### Example 4: round 2
 
 User says: "julgue de novo" after pushing fixes.
-Actions: Step 0 finds the previous review; round 2. Resolution check maps the ledger: F1 fixed in commit `a1b2c3d`, F2 declined with a reason that holds (recorded declined-accepted), F3 still open. Diff since last review scanned for new blockers only; none found. `findings` is empty, `carryover` is `{"blocker": 1, "should-fix": 0}` for F3, verdict REQUEST_CHANGES.
+Actions: Step 0 finds the previous review; round 2. Resolution check maps the ledger: F1 fixed in commit `a1b2c3d`, F2 declined with a reason that holds (recorded declined-accepted), F3 still open. Diff since last review scanned for new blockers only; none found. `findings` is empty, `carryover` is `{"blocker": 1, "should-fix": 0, "nit": 0, "pre-existing": 0}` for F3, verdict REQUEST_CHANGES.
 Result: a short review with only the Resolution table and TL;DR. No new comments, no new fronts, convergence preserved.
 
 ## Troubleshooting

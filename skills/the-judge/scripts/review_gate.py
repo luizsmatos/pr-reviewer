@@ -131,18 +131,16 @@ def check_summary(summary: str) -> list:
     return v
 
 
-def check_verdict(verdict: str, findings: list, carryover: dict) -> list:
-    sevs = {f.get("severity") for f in findings}
-    open_blockers = ("blocker" in sevs) or carryover.get("blocker", 0) > 0
-    open_shouldfix = ("should-fix" in sevs) or carryover.get("should-fix", 0) > 0
-    if open_blockers:
+def check_verdict(verdict: str, findings: list, carryover: dict, open_human_asks: int) -> list:
+    sevs = {f.get("severity") for f in findings} | {k for k, n in carryover.items() if n > 0}
+    if sevs & {"blocker", "should-fix"}:
         expected = "REQUEST_CHANGES"
-    elif open_shouldfix:
+    elif sevs or open_human_asks > 0:
         expected = "COMMENT"
     else:
         expected = "APPROVE"
     if verdict != expected:
-        return [f"VERDICT: '{verdict}' inconsistent with findings plus carryover, expected '{expected}'"]
+        return [f"VERDICT: '{verdict}' inconsistent with findings, carryover and open human asks, expected '{expected}'"]
     return []
 
 
@@ -161,8 +159,8 @@ def check_round(round_n: int, data: dict, findings: list, summary: str) -> list:
             v.append("ROUND: round >= 2 summary requires a Resolution section mapping every previous finding")
     if carry is not None:
         for k in carry:
-            if k not in ("blocker", "should-fix"):
-                v.append(f"ROUND: carryover key '{k}' invalid, use 'blocker' and 'should-fix'")
+            if k not in SEVERITIES:
+                v.append(f"ROUND: carryover key '{k}' invalid, use {SEVERITIES}")
     return v
 
 
@@ -194,12 +192,16 @@ def main() -> int:
 
     round_n = data.get("round", 1)
     carryover = data.get("carryover") or {}
+    open_human_asks = data.get("open_human_asks")
+    if not isinstance(open_human_asks, int) or open_human_asks < 0:
+        violations.append("SCHEMA: 'open_human_asks' is required, an integer >= 0 (open asks from the Pass E ledger)")
+        open_human_asks = 0
     for i, f in enumerate(findings, 1):
         violations += check_finding(i, f)
     violations += check_summary(summary)
     violations += check_round(round_n, data, findings, summary)
     if verdict in VERDICTS:
-        violations += check_verdict(verdict, findings, carryover)
+        violations += check_verdict(verdict, findings, carryover, open_human_asks)
         if verdict not in summary:
             violations.append(f"SUMMARY: TL;DR must contain the verdict token '{verdict}' verbatim")
 

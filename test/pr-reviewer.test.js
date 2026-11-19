@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadConfig } from "../config.js";
@@ -99,6 +102,30 @@ test("buildReview separa achado fora do diff e recusa approve com major", () => 
   const approve = parseDraft(draft([finding()], "approve"), REF);
   assert.throws(() => buildReview(approve, diffLines(DIFF)), /approve/);
   assert.equal(buildReview(approve, diffLines(DIFF), { force: true }).event, "APPROVE");
+  assert.throws(() => buildReview(parseDraft(draft([finding({ severity: "nit" })], "approve"), REF), diffLines(DIFF)), /approve/);
+  assert.equal(buildReview(parseDraft(draft([], "approve"), REF), diffLines(DIFF)).event, "APPROVE");
+});
+
+test("gate do the-judge: approve só sem achado, carryover nem pedido humano aberto", () => {
+  const gate = (findings, verdict, extra = {}) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gate-"));
+    const file = path.join(dir, "findings.json");
+    const summary = `## TL;DR\n${verdict}.\n## Promote to lint rule\nnone`;
+    fs.writeFileSync(file, JSON.stringify({ verdict, summary, findings, open_human_asks: 0, ...extra }));
+    const out = spawnSync("python3", [fileURLToPath(new URL("../skills/the-judge/scripts/review_gate.py", import.meta.url)), file], { encoding: "utf8" });
+    return out.stdout;
+  };
+  const nit = { path: "a.js", line: 1, severity: "nit", body: "🟡 Nome confuso em a.js:1." };
+  const pre = { path: "a.js", severity: "pre-existing", body: "🟣 Bug antigo em a.js:9." };
+  const major = { ...nit, severity: "should-fix", body: "🟠 Erro em a.js:1.", evidence: [{ type: "internal", ref: "a.js:1" }] };
+
+  assert.match(gate([], "APPROVE"), /PASS/);
+  assert.match(gate([nit], "APPROVE"), /expected 'COMMENT'/);
+  assert.match(gate([pre], "COMMENT"), /PASS/);
+  assert.match(gate([major, nit], "COMMENT"), /expected 'REQUEST_CHANGES'/);
+  assert.match(gate([], "APPROVE", { open_human_asks: 2 }), /expected 'COMMENT'/);
+  assert.match(gate([], "APPROVE", { round: 2, carryover: { nit: 1 }, summary: "## TL;DR\nAPPROVE\n## Resolution\nx\n## Promote to lint rule\nnone" }), /expected 'COMMENT'/);
+  assert.match(gate([], "APPROVE", { open_human_asks: undefined }), /open_human_asks/);
 });
 
 test("orçamento diário debita até o teto e zera na virada do dia", () => {

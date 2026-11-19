@@ -10,6 +10,7 @@ import { countBySeverity, parseDraft, renderDraft } from "../draft.js";
 import { ciGate, fetchChecks, parsePrRef, pollRequested } from "../gh.js";
 import { buildReview, diffLines } from "../publish.js";
 import { budgetLeft, debit, mergeRequested } from "../state.js";
+import { fetchThreads } from "../review.js";
 
 const REF = { org: "acme", repo: "app", pr: 12 };
 const SHA = "a".repeat(40);
@@ -186,4 +187,19 @@ test("fetchChecks trata erro do gh como nenhum check", () => {
   const config = { ghBin: "gh" };
   assert.deepEqual(fetchChecks({ config, slug: "o/r", pr: 1, run: () => '[{"bucket":"pass"}]' }), [{ bucket: "pass" }]);
   assert.deepEqual(fetchChecks({ config, slug: "o/r", pr: 1, run: () => { throw new Error("no checks reported"); } }), []);
+});
+
+test("fetchThreads grava as threads no scratch e lista as que falharam", () => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "threads-"));
+  const calls = [];
+  const run = (_bin, args) => {
+    calls.push(args[2]);
+    if (args[2].endsWith("/issues/7/comments")) throw new Error("HTTP 502");
+    return '{"user":"ana","body":"ok"}\n';
+  };
+  const missing = fetchThreads({ run, ghBin: "gh", slug: "o/r", pr: 7, scratch });
+  assert.deepEqual(missing, ["issue-comments.jsonl"]);
+  assert.deepEqual(calls, ["repos/o/r/pulls/7/reviews", "repos/o/r/pulls/7/comments", "repos/o/r/issues/7/comments"]);
+  assert.equal(fs.readFileSync(path.join(scratch, "inline-comments.jsonl"), "utf8"), '{"user":"ana","body":"ok"}\n');
+  assert.equal(fs.existsSync(path.join(scratch, "issue-comments.jsonl")), false);
 });

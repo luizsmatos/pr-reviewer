@@ -63,7 +63,8 @@ severidades). Um skill novo precisa de um prompt próprio que termine pedindo a
 resposta no formato do rascunho: linha `verdict:`, `## Resumo` e `## Achados`
 com o bloco JSON de `path`, `line`, `severity` (`critical | major | nit`) e
 `body`. Use `prompts/review.md` como modelo. Placeholders disponíveis: `{{org}}`,
-`{{repo}}`, `{{pr}}`, `{{title}}`, `{{base}}`, `{{scratch}}` e `{{skillDir}}`.
+`{{repo}}`, `{{pr}}`, `{{title}}`, `{{base}}`, `{{scratch}}`, `{{skillDir}}`, `{{me}}` (login do `gh`) e `{{threads}}`
+(resultado do download de reviews e threads para o scratch, que o agent lê sem `gh api`).
 
 O agent só roda scripts de `SKILL_DIR/scripts/` (direto ou com `python3`); outro
 interpretador precisa entrar em `allowedTools`, no `review.js`. `node index.js doctor`

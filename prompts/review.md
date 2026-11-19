@@ -11,6 +11,22 @@ Leia `{{skillDir}}/SKILL.md` e siga esse skill (`the-judge`) com os argumentos
 `python3 {{skillDir}}/scripts/<script>.py`. Ajustes para este ambiente headless:
 
 - O PR existe: leia o corpo com `gh pr view {{pr}}` para o Pass E.
+- Reviews e threads do PR já estão baixadas em `{{scratch}}`, uma linha JSON por
+  item ({{threads}}): `reviews.jsonl` (corpos das reviews),
+  `inline-comments.jsonl` (comentários inline e respostas, ligados por
+  `in_reply_to_id`) e `issue-comments.jsonl` (comentários gerais). Leia os três
+  com Read, na íntegra, para o ask ledger do Pass E; não use `gh api`. Uma
+  resposta da autora que recusa um pedido com motivo conta como resposta: o item
+  sai do ledger como declinado (diga se o motivo se sustenta no código) e não
+  fica "não verificado". Arquivo não baixado: diga isso em Checks run.
+- Reviews de `{{me}}` foram publicadas por este daemon, em rodadas anteriores.
+  Isto substitui o "Ignore previous reviews" do modo `--local`: não as
+  ignore. Cada achado delas (F*, P*) entra no ask ledger como item
+  próprio, marcado feito, declinado (com a resposta da autora) ou aberto, e
+  aberto conta em `open_human_asks`. Quando a correção aplicada seguiu uma
+  sugestão de achado anterior, confira os efeitos dela além da linha corrigida
+  (fallback que passa a valer, outro chamador da mesma função, ramo que muda),
+  com `file:line`.
 - Não há dependências instaladas. Não rode lint, typecheck nem testes e não
   instale nada: a escada determinística do Step 1 vem do CI. Leia
   `gh pr checks {{pr}}` e, para job que falhou, `gh run view <run-id> --log-failed`.

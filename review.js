@@ -35,6 +35,29 @@ export function allowedTools(scratch, skillDir) {
   ];
 }
 
+// O agent não tem `gh api` (aceitaria -X POST pelo mesmo prefixo): as reviews e
+// as threads vêm pré-baixadas, em JSONL, para o Pass E ler com Read.
+const THREADS = {
+  "reviews.jsonl": ["pulls", "reviews", "{user: .user.login, state, submitted_at, commit_id, body}"],
+  "inline-comments.jsonl": ["pulls", "comments", "{id, in_reply_to_id, user: .user.login, created_at, path, line, body}"],
+  "issue-comments.jsonl": ["issues", "comments", "{user: .user.login, created_at, body}"],
+};
+
+export function fetchThreads({ run, ghBin, slug, pr, scratch }) {
+  const missing = [];
+  for (const [file, [kind, sub, fields]] of Object.entries(THREADS)) {
+    const target = path.join(scratch, file);
+    try {
+      const out = run(ghBin, ["api", "--paginate", `repos/${slug}/${kind}/${pr}/${sub}`, "--jq", `.[] | ${fields}`]);
+      fs.writeFileSync(target, out);
+    } catch {
+      fs.rmSync(target, { force: true });
+      missing.push(file);
+    }
+  }
+  return missing;
+}
+
 export function renderPrompt(vars, template) {
   return template.replace(/\{\{(\w+)\}\}/g, (_, name) => String(vars[name] ?? ""));
 }
@@ -42,6 +65,8 @@ export function renderPrompt(vars, template) {
 export function createReviewer({ config, run, debit, claude = runClaude }) {
   const template = fs.readFileSync(config.promptFile, "utf8");
   const git = (cwd, ...args) => run("git", args, { cwd });
+  let me;
+  const ghLogin = () => (me ??= run(config.ghBin, ["api", "user", "--jq", ".login"]).trim());
 
   return async function review(key) {
     const ref = parsePrRef(key);
@@ -77,6 +102,8 @@ export function createReviewer({ config, run, debit, claude = runClaude }) {
     const file = draftFile(config.stateDir, ref);
     const scratch = path.join(config.stateDir, "tmp", `${org}-${repo}-${pr}`);
     fs.mkdirSync(scratch, { recursive: true });
+    const missing = fetchThreads({ run, ghBin: config.ghBin, slug, pr, scratch });
+    const threads = missing.length ? `não baixados: ${missing.join(", ")}` : "todos baixados";
     try {
       let failure;
       for (let attempt = 1; attempt <= 2; attempt += 1) {
@@ -87,7 +114,7 @@ export function createReviewer({ config, run, debit, claude = runClaude }) {
           bin: config.claudeBin,
           args: [
             "-p",
-            renderPrompt({ org, repo, pr, title: info.title, base, scratch, skillDir: config.skillDir }, template),
+            renderPrompt({ org, repo, pr, title: info.title, base, scratch, skillDir: config.skillDir, me: ghLogin(), threads }, template),
             "--allowedTools",
             ...allowedTools(scratch, config.skillDir),
             "--model",

@@ -1,0 +1,15 @@
+{
+  "name": "pr-reviewer",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "bin": { "pr-reviewer": "index.js" },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "start": "node index.js",
+    "status": "node index.js status"
+  },
+  "engines": { "node": ">=20.12" },
+  "license": "UNLICENSED",
+  "description": "Acompanha os PRs que pedem o seu review no GitHub, rascunha o review com o claude headless e só publica com o seu ok"
+}

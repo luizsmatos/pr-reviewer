@@ -111,7 +111,7 @@ test("gate do the-judge: approve só sem achado, carryover nem pedido humano abe
   const gate = (findings, verdict, extra = {}) => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gate-"));
     const file = path.join(dir, "findings.json");
-    const summary = `## TL;DR\n${verdict}.\n## Promote to lint rule\nnone`;
+    const summary = `## Veredito\n${verdict}.\n<details>\n<summary>Como verifiquei</summary>\n\nCI verde.\n\n</details>`;
     fs.writeFileSync(file, JSON.stringify({ verdict, summary, findings, open_human_asks: 0, ...extra }));
     const out = spawnSync("python3", [fileURLToPath(new URL("../skills/the-judge/scripts/review_gate.py", import.meta.url)), file], { encoding: "utf8" });
     return out.stdout;
@@ -125,8 +125,24 @@ test("gate do the-judge: approve só sem achado, carryover nem pedido humano abe
   assert.match(gate([pre], "COMMENT"), /PASS/);
   assert.match(gate([major, nit], "COMMENT"), /expected 'REQUEST_CHANGES'/);
   assert.match(gate([], "APPROVE", { open_human_asks: 2 }), /expected 'COMMENT'/);
-  assert.match(gate([], "APPROVE", { round: 2, carryover: { nit: 1 }, summary: "## TL;DR\nAPPROVE\n## Resolution\nx\n## Promote to lint rule\nnone" }), /expected 'COMMENT'/);
+  assert.match(gate([], "APPROVE", { round: 2, carryover: { nit: 1 }, summary: "## Veredito\nAPPROVE\n## Desde a última rodada\n- ⏳ x\n<details>\n<summary>Como verifiquei</summary>\n\nx\n\n</details>" }), /expected 'COMMENT'/);
   assert.match(gate([], "APPROVE", { open_human_asks: undefined }), /open_human_asks/);
+});
+
+test("gate do the-judge: summary abre no veredito, trilha em <details> e sem seção vazia", () => {
+  const gate = (summary, extra = {}) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gate-"));
+    const file = path.join(dir, "findings.json");
+    fs.writeFileSync(file, JSON.stringify({ verdict: "APPROVE", summary, findings: [], open_human_asks: 0, ...extra }));
+    return spawnSync("python3", [fileURLToPath(new URL("../skills/the-judge/scripts/review_gate.py", import.meta.url)), file], { encoding: "utf8" }).stdout;
+  };
+  const trail = "<details>\n<summary>Como verifiquei</summary>\n\nCI verde.\n\n</details>";
+  assert.match(gate(`## Veredito\nAPPROVE.\n${trail}`), /PASS/);
+  assert.match(gate(`## TL;DR\nAPPROVE.\n${trail}`), /PASS/);
+  assert.match(gate(`## Riscos\nx\n## Veredito\nAPPROVE.\n${trail}`), /first section must be the verdict/);
+  assert.match(gate("## Veredito\nAPPROVE.\n## Checks run\nCI verde."), /<details>/);
+  assert.match(gate(`## Veredito\nAPPROVE.\n## Riscos\nnenhum\n${trail}`), /empty section '## Riscos'/);
+  assert.match(gate(`## Veredito\nAPPROVE.\n${trail}`, { round: 2, carryover: {} }), /Since the last round/);
 });
 
 test("orçamento diário debita até o teto e zera na virada do dia", () => {

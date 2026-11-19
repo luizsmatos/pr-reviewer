@@ -121,12 +121,20 @@ def check_finding(i: int, f: dict) -> list:
     return v
 
 
+VERDICT_HEADING = re.compile(r"^#+\s*(tl;dr|verdict|veredito)\b", re.I | re.M)
+RESOLUTION_HEADING = re.compile(r"^#+\s*(resolution|since the last round|desde a última rodada)\b", re.I | re.M)
+EMPTY_SECTION = re.compile(r"^#+[^\n]*\n+\s*(none|nenhum|nenhuma|n/a|-)\.?\s*(\n|$)", re.I | re.M)
+
+
 def check_summary(summary: str) -> list:
     v = []
-    if "tl;dr" not in summary.lower():
-        v.append("SUMMARY: missing TL;DR section")
-    if not re.search(r"lint[ -]?rule", summary, re.I):
-        v.append("SUMMARY: missing 'Promote to lint rule' section (write 'none' if empty)")
+    first = re.search(r"^#+[^\n]*", summary, re.M)
+    if not first or not VERDICT_HEADING.match(first.group(0)):
+        v.append("SUMMARY: the first section must be the verdict (Verdict / Veredito)")
+    if "<details>" not in summary or "</details>" not in summary:
+        v.append("SUMMARY: the audit trail (checks, passes, ledger, research) goes inside one <details> block")
+    for m in EMPTY_SECTION.finditer(summary):
+        v.append(f"SUMMARY: empty section '{m.group(0).splitlines()[0]}': omit it instead of writing '{m.group(1)}'")
     v += text_violations(summary, "SUMMARY")
     return v
 
@@ -154,9 +162,9 @@ def check_round(round_n: int, data: dict, findings: list, summary: str) -> list:
             v.append("ROUND: round >= 2 requires 'carryover' with counts of still-open previous findings (zeros allowed)")
         for f in findings:
             if f.get("severity") != "blocker":
-                v.append(f"ROUND: round {round_n} may only post NEW blockers; '{f.get('severity')}' at {f.get('path', '?')} belongs in the Resolution table or nowhere")
-        if not re.search(r"resolu", summary, re.I):
-            v.append("ROUND: round >= 2 summary requires a Resolution section mapping every previous finding")
+                v.append(f"ROUND: round {round_n} may only post NEW blockers; '{f.get('severity')}' at {f.get('path', '?')} belongs in 'Since the last round' or nowhere")
+        if not RESOLUTION_HEADING.search(summary):
+            v.append("ROUND: round >= 2 summary requires a 'Since the last round' section mapping every previous finding")
     if carry is not None:
         for k in carry:
             if k not in SEVERITIES:
@@ -203,7 +211,7 @@ def main() -> int:
     if verdict in VERDICTS:
         violations += check_verdict(verdict, findings, carryover, open_human_asks)
         if verdict not in summary:
-            violations.append(f"SUMMARY: TL;DR must contain the verdict token '{verdict}' verbatim")
+            violations.append(f"SUMMARY: the verdict section must contain the verdict token '{verdict}' verbatim")
 
     if violations:
         for x in violations:

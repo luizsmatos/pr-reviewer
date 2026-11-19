@@ -18,7 +18,7 @@ Leia `{{skillDir}}/SKILL.md` e siga esse skill (`the-judge`) com os argumentos
   com Read, na íntegra, para o ask ledger do Pass E; não use `gh api`. Uma
   resposta da autora que recusa um pedido com motivo conta como resposta: o item
   sai do ledger como declinado (diga se o motivo se sustenta no código) e não
-  fica "não verificado". Arquivo não baixado: diga isso em Checks run.
+  fica "não verificado". Arquivo não baixado: diga isso em "Como verifiquei".
 - Reviews de `{{me}}` foram publicadas por este daemon, em rodadas anteriores.
   Isto substitui o "Ignore previous reviews" do modo `--local`: não as
   ignore. Cada achado delas (F*, P*) entra no ask ledger como item
@@ -30,12 +30,16 @@ Leia `{{skillDir}}/SKILL.md` e siga esse skill (`the-judge`) com os argumentos
 - Não há dependências instaladas. Não rode lint, typecheck nem testes e não
   instale nada: a escada determinística do Step 1 vem do CI. Leia
   `gh pr checks {{pr}}` e, para job que falhou, `gh run view <run-id> --log-failed`.
-  Registre em Checks run o resultado de cada job, sem interpretar; job ainda
+  Registre em "Como verifiquei" o resultado do CI numa linha, sem interpretar; job ainda
   rodando entra como pendente. O que o CI já acusa fica fora dos achados; job
-  falhando por causa do PR entra no Resumo. Os scans determinísticos
+  falhando por causa do PR entra no Veredito. Os scans determinísticos
   (`scan_bypasses.py`, `scan_duplicates.py`) e o gate (`review_gate.py`) rodam
   normalmente.
 - Grave o `findings.json` em `{{scratch}}/findings.json`.
+- O `summary` segue o "Summary Body Template" do skill com os títulos em
+  português: `Veredito`, `Desde a última rodada`, `Outros pontos`,
+  `Riscos` e o bloco `<details><summary>Como verifiquei</summary>`. Seção sem
+  conteúdo some. O que está no JSON de achados não se repete no summary.
 - Não publique nada no GitHub e não altere arquivos do repo.
 
 Depois que o gate passar, converta o `findings.json` no rascunho abaixo e

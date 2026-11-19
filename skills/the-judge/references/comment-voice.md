@@ -20,7 +20,7 @@ Empathy here means respecting the author's time, competence, and intent. It neve
 - **Acknowledge a real trade-off in one clause, then make the ask.** "The retry keeps the happy path simple; the silent drop on the third failure loses the event, though. Can we dead-letter it?"
 - **Never imply carelessness.** No "you forgot", no "you missed", no "obviously". The code has a gap; describe the gap.
 - **Never lecture.** Do not explain concepts the author demonstrably knows; their own diff is proof of what they know.
-- **No praise comments.** A positive observation earns at most one factual line in the TL;DR ("the outbox change removes the dual-write path"). Inline praise is noise wearing a smile.
+- **No praise comments.** A positive observation earns at most one factual line in the verdict section ("the outbox change removes the dual-write path"). Inline praise is noise wearing a smile.
 - **Matter-of-fact on severity.** A blocker is stated calmly with its evidence. No alarm words, no drama, no exclamation marks anywhere (gate-enforced).
 
 ## Banned (Gate-Enforced)

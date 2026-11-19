@@ -37,3 +37,28 @@ export function pollRequested({ run: exec = run, config }) {
       author: pr.author?.login ?? null,
     }));
 }
+
+// Sem checks (ou gh falhando) vira lista vazia: o ciGate espera a carência e revisa.
+export function fetchChecks({ run: exec = run, config, slug, pr }) {
+  try {
+    return JSON.parse(exec(config.ghBin, ["pr", "checks", String(pr), "-R", slug, "--json", "bucket"]));
+  } catch {
+    return [];
+  }
+}
+
+const NO_CHECKS_GRACE_MIN = 5;
+
+// ready: CI terminou (passou ou falhou); wait: algo pendente ou nenhum check
+// apareceu ainda depois do push; timeout: esperou demais, revisa assim mesmo.
+export function ciGate(checks, waitingSince, now, maxWaitMin) {
+  const waitedMin = waitingSince ? (Date.parse(now) - Date.parse(waitingSince)) / 60_000 : 0;
+  const pending = checks.filter((c) => c.bucket === "pending").length;
+  if (checks.length > 0 && pending === 0) {
+    return { decision: "ready", pending, waitedMin };
+  }
+  if (waitedMin >= maxWaitMin || (checks.length === 0 && waitedMin >= NO_CHECKS_GRACE_MIN)) {
+    return { decision: "timeout", pending, waitedMin };
+  }
+  return { decision: "wait", pending, waitedMin };
+}

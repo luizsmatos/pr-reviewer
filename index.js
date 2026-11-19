@@ -5,7 +5,7 @@ import { execFile } from "node:child_process";
 import { formatUsage } from "./cli-output.js";
 import { loadConfig } from "./config.js";
 import { draftFile } from "./draft.js";
-import { parsePrRef, pollRequested, run } from "./gh.js";
+import { ciGate, fetchChecks, parsePrRef, pollRequested, run } from "./gh.js";
 import { publish } from "./publish.js";
 import { createReviewer } from "./review.js";
 import { budgetLeft, createState, debit, mergeRequested } from "./state.js";
@@ -84,21 +84,55 @@ function autoPublish(key) {
   }
 }
 
-async function drain(review) {
-  for (;;) {
-    const key = state.update((data) => {
-      if (budgetLeft(data, today(), config.maxPerDay) <= 0) {
-        return null;
+// Item com CI rodando vai para waiting_ci e a fila segue; a cada polling os
+// waiting_ci são checados de novo, antes dos queued.
+function ciReady(key, item) {
+  if (item.ciSkip) {
+    return true;
+  }
+  const { org, repo, pr } = parsePrRef(key);
+  const checks = fetchChecks({ config, slug: `${org}/${repo}`, pr });
+  const gate = ciGate(checks, item.waitingSince, nowIso(), config.checksMaxWaitMin);
+  if (gate.decision === "wait") {
+    state.update((data) => {
+      if (data.items[key].status !== "waiting_ci") {
+        log(`${key}: aguardando CI`);
       }
-      const next = Object.keys(data.items).find((k) => data.items[k].status === "queued");
-      if (next) {
-        data.items[next].status = "reviewing";
-      }
-      return next ?? null;
+      Object.assign(data.items[key], { status: "waiting_ci", waitingSince: item.waitingSince ?? nowIso(), pendingChecks: gate.pending });
     });
+    return false;
+  }
+  if (gate.decision === "timeout") {
+    log(`${key}: CI não terminou em ${Math.round(gate.waitedMin)} min (${gate.pending} pendente(s)) — revisando assim mesmo`);
+  }
+  return true;
+}
+
+async function drain(review) {
+  const deferred = new Set();
+  for (;;) {
+    const candidates = state.update((data) => {
+      if (budgetLeft(data, today(), config.maxPerDay) <= 0) {
+        return [];
+      }
+      const keys = Object.keys(data.items).filter((k) => !deferred.has(k));
+      const by = (status) => keys.filter((k) => data.items[k].status === status);
+      return [...by("waiting_ci"), ...by("queued")].map((k) => [k, data.items[k]]);
+    });
+    let key = null;
+    for (const [k, item] of candidates) {
+      if (ciReady(k, item)) {
+        key = k;
+        break;
+      }
+      deferred.add(k);
+    }
     if (!key) {
       return;
     }
+    state.update((data) => {
+      Object.assign(data.items[key], { status: "reviewing", waitingSince: null, pendingChecks: null, ciSkip: false });
+    });
     log(`revisando ${key}`);
     const result = await review(key).catch((error) => ({ status: "failed", error: firstLine(error).slice(0, 500) }));
     state.update((data) => Object.assign(data.items[key], result, { reviewedAt: nowIso() }));
@@ -151,6 +185,7 @@ function status() {
       item.status === "drafted" ? `${item.verdict}, ${item.findings} → ${draftFile(config.stateDir, parsePrRef(key))}${item.error ? `\n           ${item.error}` : ""}` :
       item.status === "published" ? item.reviewUrl :
       item.status === "publishing" ? "interrompido no meio da publicação — confira o PR no GitHub antes de rodar publish" :
+      item.status === "waiting_ci" ? `aguardando CI há ${Math.round((Date.now() - Date.parse(item.waitingSince)) / 60_000)} min (${item.pendingChecks} pendente(s))` :
       item.error ?? "";
     console.log(`${item.status.padEnd(10)} ${key} — ${item.title ?? ""}${extra ? `\n           ${extra}` : ""}${item.usage ? `\n           ${formatUsage(item.usage)}` : ""}`);
   }
@@ -204,7 +239,7 @@ const [command, arg, ...rest] = process.argv.slice(2);
 const commands = {
   status,
   doctor,
-  review: () => setStatus(arg, "queued", { url: arg, queuedAt: nowIso(), staleRequeues: 0 }),
+  review: () => setStatus(arg, "queued", { url: arg, queuedAt: nowIso(), staleRequeues: 0, ciSkip: true }),
   retry: () => setStatus(arg, "queued", { queuedAt: nowIso(), staleRequeues: 0 }),
   skip: () => setStatus(arg, "skipped"),
   publish: () => console.log(`publicado: ${publish({ config, run, state, ref: arg, force: rest.includes("--force") })}`),

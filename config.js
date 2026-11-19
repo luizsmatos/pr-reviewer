@@ -25,6 +25,7 @@ export function loadConfig(env = process.env) {
     claudeModel: env.CLAUDE_MODEL || "claude-opus-5-5",
     reviewTimeoutMin: Number(env.REVIEW_TIMEOUT_MIN || 30),
     maxPerDay: Number(env.MAX_PER_DAY || Infinity),
+    checksMaxWaitMin: Number(env.CHECKS_MAX_WAIT_MIN || 45),
     ghBin: env.GH_BIN || "gh",
     stateDir: expandHome(env.STATE_DIR || "~/.pr-reviewer"),
     skillDir: path.resolve(ROOT, expandHome(env.SKILL_DIR || "skills/the-judge")),

@@ -9,6 +9,7 @@ gh search prs --review-requested=@me   (a cada POLL_INTERVAL_S)
         │  PR novo, aberto, não-draft, org em ALLOWED_ORGS
         ▼
 fila serial em ~/.pr-reviewer/state.json  (MAX_PER_DAY por dia, sem limite por padrão)
+        │  CI ainda rodando? → waiting_ci, checado a cada polling (até CHECKS_MAX_WAIT_MIN)
         │  clone em repos/<org>/<repo>, worktree no head do PR
         ▼
 claude -p  →  reviews/<org>-<repo>-<n>.md  +  notificação do macOS
@@ -74,7 +75,7 @@ confere se o skill e o prompt existem.
 |---|---|
 | `node index.js` | sobe o daemon (polling + fila) |
 | `status` | orçamento do dia e itens por status |
-| `review <url>` | enfileira à mão, mesmo já visto (re-review) |
+| `review <url>` | enfileira à mão, mesmo já visto (re-review), sem esperar o CI |
 | `publish <org>/<repo>#<n> [--force]` | posta o rascunho no GitHub |
 | `skip <org>/<repo>#<n>` | marca `skipped`, mantém o rascunho |
 | `retry <org>/<repo>#<n>` | reenfileira um `failed` |
@@ -82,6 +83,12 @@ confere se o skill e o prompt existem.
 
 ## Comportamento
 
+- **Espera o CI sem travar a fila.** Na vez do PR, `gh pr checks` diz se algum
+  check está pendente; se estiver, o PR vira `waiting_ci` e a fila segue. A cada
+  polling os `waiting_ci` são checados de novo, antes dos `queued`. CI que
+  terminou com falha também libera o review, que cita o job no Resumo. Passados
+  `CHECKS_MAX_WAIT_MIN` (45 por padrão), ou 5 min sem nenhum check, revisa assim
+  mesmo. O orçamento só é debitado quando o review começa.
 - **Primeira execução não revisa o backlog.** O que já pedia review vira
   `skipped`; use `review <url>` para o que quiser.
 - **Depois de publicado, re-revisa só com novo pedido de review** ("Re-request

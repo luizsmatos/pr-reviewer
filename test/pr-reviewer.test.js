@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { loadConfig } from "../config.js";
 import { test } from "node:test";
 import { countBySeverity, parseDraft, renderDraft } from "../draft.js";
-import { parsePrRef, pollRequested } from "../gh.js";
+import { ciGate, fetchChecks, parsePrRef, pollRequested } from "../gh.js";
 import { buildReview, diffLines } from "../publish.js";
 import { budgetLeft, debit, mergeRequested } from "../state.js";
 
@@ -165,4 +165,25 @@ test("skill e prompt relativos resolvem a partir do repo, não do cwd", () => {
   assert.equal(config.skillDir, path.join(root, "skills/outra"));
   assert.equal(config.promptFile, path.join(root, "prompts/outra.md"));
   assert.equal(loadConfig({}).skillDir, path.join(root, "skills/the-judge"));
+});
+
+test("ciGate espera CI pendente, revisa quando termina e desiste no teto", () => {
+  const at = (min) => new Date(Date.parse("2026-11-19T10:00:00Z") + min * 60_000).toISOString();
+  const pass = { bucket: "pass" };
+  const fail = { bucket: "fail" };
+  const pending = { bucket: "pending" };
+  const since = at(0);
+
+  assert.equal(ciGate([pass, fail], null, at(0), 45).decision, "ready");
+  assert.equal(ciGate([pass, pending], null, at(0), 45).decision, "wait");
+  assert.equal(ciGate([pass, pending], since, at(44), 45).decision, "wait");
+  assert.deepEqual(ciGate([pass, pending], since, at(45), 45), { decision: "timeout", pending: 1, waitedMin: 45 });
+  assert.equal(ciGate([], null, at(0), 45).decision, "wait", "push recém-feito ainda sem checks");
+  assert.equal(ciGate([], since, at(5), 45).decision, "timeout", "repo sem CI revisa depois da carência");
+});
+
+test("fetchChecks trata erro do gh como nenhum check", () => {
+  const config = { ghBin: "gh" };
+  assert.deepEqual(fetchChecks({ config, slug: "o/r", pr: 1, run: () => '[{"bucket":"pass"}]' }), [{ bucket: "pass" }]);
+  assert.deepEqual(fetchChecks({ config, slug: "o/r", pr: 1, run: () => { throw new Error("no checks reported"); } }), []);
 });
